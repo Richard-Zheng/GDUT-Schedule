@@ -1,27 +1,9 @@
 import argparse
-import asyncio
+import requests
 import config
 from html.parser import HTMLParser
 
-import aiohttp
-
 import crypto
-
-
-class UserSession:
-    def __init__(self, session: aiohttp.ClientSession, username: str, password: str):
-        self.session = session
-        self.username = username
-        self.password = password
-        self.authHTMLParser = AuthHTMLParser(self.username, self.password)
-
-    async def login(self):
-        async with self.session.get(config.AuthURL, params=config.params, headers=config.headers) as response:
-            self.authHTMLParser.feed(await response.text())
-        self.authHTMLParser.authAttrs['password'] = crypto.encrypt_password(self.password, self.authHTMLParser.pwdDefaultEncryptSalt)
-        async with self.session.post(config.AuthURL, params=config.params, headers=config.headers,
-                                     data=aiohttp.FormData(self.authHTMLParser.authAttrs), allow_redirects=False) as response:
-            return await response.text()
 
 
 class AuthHTMLParser(HTMLParser):
@@ -36,14 +18,31 @@ class AuthHTMLParser(HTMLParser):
         elif tag == 'input' and attrs[1][1] == 'pwdDefaultEncryptSalt':
             self.pwdDefaultEncryptSalt = attrs[2][1]
 
+    def feed(self, data):
+        super().feed(data)
+        self.authAttrs['password'] = crypto.encrypt_password(self.authAttrs['password'], self.pwdDefaultEncryptSalt)
 
-async def main(username, password):
-    async with aiohttp.ClientSession() as session:
-        us = UserSession(session, username, password)
-        st = await us.login()
-        for cookie in us.session.cookie_jar:
-            print(cookie.key)
-            print(cookie["domain"])
+
+class UserSession:
+    def __init__(self, username: str, password: str):
+        self.username = username
+        self.password = password
+        self.authHTML = AuthHTMLParser(username, password)
+        response = requests.get(
+            'https://authserver.gdut.edu.cn/authserver/login?service=http%3A%2F%2Fjxfw.gdut.edu.cn%2Fnew%2FssoLogin',
+            headers=config.headers)
+        self.cookies = response.cookies
+        self.authHTML.feed(response.text)
+
+    def login(self):
+        response = requests.post(
+            'https://authserver.gdut.edu.cn/authserver/login?service=http%3A%2F%2Fjxfw.gdut.edu.cn%2Fnew%2FssoLogin',
+            data=self.authHTML.authAttrs,
+            cookies=self.cookies,
+            headers=config.headers,
+            allow_redirects=False,
+        )
+        print(response.text)
 
 
 if __name__ == "__main__":
@@ -51,5 +50,6 @@ if __name__ == "__main__":
     parser.add_argument("username", help="full username")
     parser.add_argument("-p", "--password")
     args = parser.parse_args()
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(args.username, args.password))
+
+    us = UserSession(args.username, args.password)
+    us.login()
