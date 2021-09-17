@@ -40,9 +40,8 @@ class UserSession:
             data=self.authHTML.authAttrs,
             cookies=self.cookies,
             headers=config.headers,
-            allow_redirects=False,
         )
-        print(response.text)
+        self.cookies = response.cookies
 
 
 if __name__ == "__main__":

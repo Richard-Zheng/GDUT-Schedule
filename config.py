@@ -1,7 +1,6 @@
 JXFWURL = "http://jxfw.gdut.edu.cn/new/ssoLogin"
 AuthURL = "http://authserver.gdut.edu.cn/authserver/login"
 headers = {
-    'Host': 'authserver.gdut.edu.cn',
     'Cache-Control': 'max-age=0',
     'sec-ch-ua': '"Google Chrome";v="93", " Not;A Brand";v="99", "Chromium";v="93"',
     'sec-ch-ua-mobile': '?0',
