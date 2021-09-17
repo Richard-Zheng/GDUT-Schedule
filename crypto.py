@@ -57,7 +57,3 @@ def encrypt_password(password, salt):
         return password
     encrypt = Encrypt(salt, random_str(16))
     return encrypt.aes_encrypt(random_str(64) + password)
-
-
-if __name__ == '__main__':
-    print(encrypt_password('admin', '5oTEvjuoShogiOTS'))
