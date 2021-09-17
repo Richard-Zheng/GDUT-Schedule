@@ -1,6 +1,7 @@
 import argparse
 import requests
 import config
+import json
 from html.parser import HTMLParser
 
 import crypto
@@ -41,7 +42,18 @@ class UserSession:
             cookies=self.cookies,
             headers=config.headers,
         )
-        self.cookies = response.cookies
+        self.cookies = response.history[2].cookies
+
+    def get_courses_date(self, school_year: int, term: int, week: int):
+        response = requests.post(
+            config.GetStudentCoursesDateURL,
+            params={
+                'xnxqdm': f'{str(school_year)}0{str(term)}', # 学年学期
+                'zc': str(week) # 周次
+            },
+            cookies=self.cookies
+        )
+        return json.loads(response.text)
 
 
 if __name__ == "__main__":
@@ -52,3 +64,5 @@ if __name__ == "__main__":
 
     us = UserSession(args.username, args.password)
     us.login()
+    c = us.get_courses_date(2021, 1, 4)
+    print(c)

@@ -1,5 +1,9 @@
-JXFWURL = "http://jxfw.gdut.edu.cn/new/ssoLogin"
+JXFWHost = "jxfw.gdut.edu.cn"
+
+JXFWURL = f"https://{JXFWHost}/new/ssoLogin"
 AuthURL = "http://authserver.gdut.edu.cn/authserver/login"
+GetStudentCoursesDateURL = f"https://{JXFWHost}/xsgrkbcx!getKbRq.action" # xsgrkbcx: 学生个人课表查询
+
 headers = {
     'Cache-Control': 'max-age=0',
     'sec-ch-ua': '"Google Chrome";v="93", " Not;A Brand";v="99", "Chromium";v="93"',
