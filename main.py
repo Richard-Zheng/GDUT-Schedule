@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import re
+from datetime import datetime, date, time, timedelta
 from pathlib import Path
 
 import aiohttp
@@ -7,12 +9,13 @@ import requests
 import config
 import json
 from html.parser import HTMLParser
-from ics import Calendar, Event
+from icalendar import Calendar, Event
 
 import crypto
 
 data_dir = Path('data')
 data_dir.mkdir(parents=True, exist_ok=True)
+
 
 class AuthHTMLParser(HTMLParser):
     def __init__(self, username, password):
@@ -53,16 +56,53 @@ class UserSession:
         )
         self.cookies = response.history[2].cookies
 
+    async def get_all_schedule(self, school_year: int, term: int):
+        first_monday = date.fromisoformat(await self.get_first_monday_date(school_year, term))
+        async with self.session.post(
+                'https://jxfw.gdut.edu.cn/xsgrkbcx!xsAllKbList.action',
+                params={
+                    'xnxqdm': f'{str(school_year)}0{str(term)}',  # 学年学期
+                },
+                cookies=self.cookies
+        ) as response:
+            resp = await response.text()
+            schedules = json.loads(re.findall(r'var kbxx = (\[.*?\]);', resp)[0])
+            c = Calendar()
+            for course in schedules:
+                jcArr = course['jcdm2'].split(",")
+                begin_time = time.fromisoformat(config.jc_to_time[int(jcArr[0])][0] + '+08:00')
+                end_time = time.fromisoformat(config.jc_to_time[int(jcArr[-1])][1] + '+08:00')
+                continuous_schedules = zcs_to_start_and_num_of_times(course['zcs'])
+                for week_num_and_duaration in continuous_schedules:
+                    e = Event()
+                    e.add('SUMMARY', course['kcmc'])
+                    begin_date = first_monday + timedelta(weeks=week_num_and_duaration[0]-1, days=int(course['xq'])-1)
+                    e.add('dtstart', datetime.combine(begin_date, begin_time))
+                    e.add('dtend', datetime.combine(begin_date, end_time))
+                    e.add('rrule', {'freq': 'WEEKLY', 'count': week_num_and_duaration[1]})
+                    e['LOCATION'] = course['jxcdmcs']
+                    c.add_component(e)
+
+            term_ics_path = Path(data_dir, f'user_{self.username}_{school_year}0{term}_schedule.ics')
+            with term_ics_path.open(mode='wb') as f:
+                f.write(c.to_ical())
+
     async def get_week_schedule(self, school_year: int, term: int, week: int):
         async with self.session.post(
-            config.GetStudentCoursesDateURL,
-            params={
-                'xnxqdm': f'{str(school_year)}0{str(term)}', # 学年学期
-                'zc': str(week) # 周次
-            },
-            cookies=self.cookies
+                config.GetStudentCoursesDateURL,
+                params={
+                    'xnxqdm': f'{str(school_year)}0{str(term)}',  # 学年学期
+                    'zc': str(week)  # 周次
+                },
+                cookies=self.cookies
         ) as response:
             return json.loads(await response.text())
+
+    async def get_first_monday_date(self, school_year: int, term: int):
+        s = await self.get_week_schedule(school_year, term, 1)
+        for day in s[1]:
+            if day['xqmc'] == '1':
+                return day['rq']
 
     async def get_term_schedule(self, school_year: int, term: int):
         term_data_path = Path(data_dir, f'user_{self.username}_{school_year}0{term}_schedule.txt')
@@ -77,31 +117,23 @@ class UserSession:
             json.dump(all_schedule_in_a_term, f)
         return all_schedule_in_a_term
 
-    async def get_term_ics(self, school_year: int, term: int):
-        term_ics_path = Path(data_dir, f'user_{self.username}_{school_year}0{term}_schedule.ics')
-        term_schedule = await self.get_term_schedule(school_year, term)
-        c = Calendar()
-        for week_schedule in term_schedule:
-            day_to_date = {}
-            for day in week_schedule[1]:
-                day_to_date[day['xqmc']] = day['rq']
 
-            for course in week_schedule[0]:
-                e = Event()
-                e.name = course['kcmc']
-                jcArr = course['jcdm2'].split(",")
-                e.begin = day_to_date[course['xq']] + ' ' + config.jc_to_time[int(jcArr[0])][0] + '+08:00'
-                e.end = day_to_date[course['xq']] + ' ' + config.jc_to_time[int(jcArr[-1])][1] + '+08:00'
-                e.location = course['jxcdmc']
-                c.events.add(e)
-        with term_ics_path.open(mode='w') as f:
-            f.write(str(c))
-
+def zcs_to_start_and_num_of_times(zcs):
+    zc = list(map(int, zcs.split(',')))
+    zc.sort()
+    out = []
+    s_i = 0
+    for i, val in enumerate(zc):
+        if zc[s_i] + i - s_i != val:
+            out.append([zc[s_i], i - s_i])
+            s_i = i
+    out.append([zc[s_i], len(zc) - s_i])
+    return out
 
 async def main(args):
     async with aiohttp.ClientSession() as session:
         us = UserSession(session, args.username, args.password)
-        await us.get_term_ics(2021, 1)
+        await us.get_all_schedule(2021, 1)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
